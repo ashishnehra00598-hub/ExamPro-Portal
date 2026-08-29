@@ -28,6 +28,7 @@ export default function SuperDashboard() {
   const [selectedCategory, setSelectedCategory] = useState<string>('cet_12th');
   const [selectedSubTab, setSelectedSubTab] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState<string>('');
+  const [showAllTests, setShowAllTests] = useState<boolean>(false);
   const [selectedLeaderboardTest, setSelectedLeaderboardTest] = useState<string>('all');
   const [loading, setLoading] = useState(true);
 
@@ -73,6 +74,11 @@ export default function SuperDashboard() {
     }
     loadMasterData();
   }, []);
+
+  // फ़िल्टर या कैटेगरी बदलने पर See More रीसेट
+  useEffect(() => {
+    setShowAllTests(false);
+  }, [selectedCategory, selectedSubTab, searchQuery]);
 
   const handleLogout = async () => {
     await supabase.auth.signOut();
@@ -129,6 +135,9 @@ export default function SuperDashboard() {
 
     return matchCat && matchType && matchSearch;
   });
+
+  // सिर्फ 3 टेस्ट दिखाना (जब तक see more पर क्लिक न किया हो)
+  const visibleTests = showAllTests ? filteredTests : filteredTests.slice(0, 3);
 
   // Leaderboard Calculation
   const calculateOverallLeaderboard = () => {
@@ -216,7 +225,7 @@ export default function SuperDashboard() {
           <div className="flex items-center gap-3">
             <div className="bg-slate-950 border border-amber-500/30 px-4 py-2.5 rounded-2xl text-center shadow-inner">
               <span className="text-[10px] text-amber-400/80 font-bold uppercase tracking-wider block">
-                🎯 आगामी मुख्य परीक्षा CET  (10+2)
+                🎯 आगामी मुख्य परीक्षा
               </span>
               <span className="text-sm font-black text-amber-400">
                 ⏳ {getDaysLeft(examAlerts[0]?.exam_date || defaultTargetDate)}
@@ -282,7 +291,7 @@ export default function SuperDashboard() {
               {searchQuery && (
                 <button
                   onClick={() => setSearchQuery('')}
-                  className="absolute right-2.5 top-2.5 text-slate-400 hover:text-white text-xs"
+                  className="absolute right-2.5 top-2.5 text-slate-400 hover:text-white text-xs cursor-pointer"
                 >
                   ✕
                 </button>
@@ -341,7 +350,7 @@ export default function SuperDashboard() {
             </div>
           </div>
 
-          {/* Test Cards List / Coming Soon Banner */}
+          {/* Test Cards List (Top 3 or All) */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5 pt-4">
             {filteredTests.length === 0 ? (
               <div className="col-span-full bg-slate-950/80 border border-slate-800/90 p-10 rounded-3xl text-center space-y-3">
@@ -354,7 +363,7 @@ export default function SuperDashboard() {
                 </p>
               </div>
             ) : (
-              filteredTests.map((t, idx) => (
+              visibleTests.map((t, idx) => (
                 <div
                   key={t.id}
                   className="bg-slate-900 border border-slate-800 p-6 rounded-3xl space-y-4 hover:border-indigo-500/50 transition shadow-xl relative overflow-hidden flex flex-col justify-between"
@@ -389,6 +398,22 @@ export default function SuperDashboard() {
               ))
             )}
           </div>
+
+          {/* See More / Show Less Button */}
+          {filteredTests.length > 3 && (
+            <div className="text-center pt-2">
+              <button
+                onClick={() => setShowAllTests(!showAllTests)}
+                className="bg-slate-950 hover:bg-slate-900 border border-slate-700 hover:border-indigo-500/50 text-indigo-400 text-xs font-bold px-6 py-2.5 rounded-2xl transition shadow-md inline-flex items-center gap-2 cursor-pointer"
+              >
+                {showAllTests ? (
+                  <>▲ कम देखें (Show Less)</>
+                ) : (
+                  <>▼ और देखें / See More ({filteredTests.length - 3} और टेस्ट उपलब्ध हैं)</>
+                )}
+              </button>
+            </div>
+          )}
         </section>
 
         {/* Dual Leaderboard + Accuracy Section */}
