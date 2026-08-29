@@ -216,7 +216,7 @@ export default function SuperDashboard() {
           <div className="flex items-center gap-3">
             <div className="bg-slate-950 border border-amber-500/30 px-4 py-2.5 rounded-2xl text-center shadow-inner">
               <span className="text-[10px] text-amber-400/80 font-bold uppercase tracking-wider block">
-                🎯 आगामी मुख्य परीक्षा
+                🎯 आगामी मुख्य परीक्षा CET  (10+2)
               </span>
               <span className="text-sm font-black text-amber-400">
                 ⏳ {getDaysLeft(examAlerts[0]?.exam_date || defaultTargetDate)}
