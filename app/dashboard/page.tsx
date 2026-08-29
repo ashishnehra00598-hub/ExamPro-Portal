@@ -24,14 +24,12 @@ export default function SuperDashboard() {
   const [results, setResults] = useState<any[]>([]);
   const [allScores, setAllScores] = useState<any[]>([]);
   const [examAlerts, setExamAlerts] = useState<any[]>([]);
-  const [materials, setMaterials] = useState<any[]>([]);
 
   const [selectedCategory, setSelectedCategory] = useState<string>('cet_12th');
   const [selectedSubTab, setSelectedSubTab] = useState<string>('all');
   const [selectedLeaderboardTest, setSelectedLeaderboardTest] = useState<string>('all');
   const [loading, setLoading] = useState(true);
 
-  // डिफ़ॉल्ट मुख्य परीक्षा काउंटडाउन (Target Exam Date)
   const defaultTargetDate = '2026-10-15';
 
   useEffect(() => {
@@ -43,39 +41,34 @@ export default function SuperDashboard() {
       }
       setUser(user);
 
-      // 1. Tests
+      // 1. Tests लोड
       const { data: testsData } = await supabase
         .from('tests')
         .select('*')
         .order('id', { ascending: true });
       if (testsData) setTests(testsData);
 
-      // 2. Student Personal Results (Attempts)
-      const { data: userScores } = await supabase
-        .from('test_results')
+      // 2. सभी सबमिट किए गए टेस्ट (test_attempts टेबल से)
+      const { data: allAttempts } = await supabase
+        .from('test_attempts')
         .select('*')
-        .eq('user_email', user.email)
         .order('id', { ascending: false });
-      if (userScores) setResults(userScores);
 
-      // 3. Global Scores for Leaderboard
-      const { data: globalScores } = await supabase
-        .from('test_results')
-        .select('*');
-      if (globalScores) setAllScores(globalScores);
+      if (allAttempts) {
+        setAllScores(allAttempts);
+        // इस यूज़र के टेस्ट (user_id या student_name / email मैच)
+        const myTests = allAttempts.filter(
+          (a) => a.user_id === user.id || a.student_name === (user.user_metadata?.full_name || user.email?.split('@')[0])
+        );
+        // अगर user_id फ़िल्टर में खाली मिले तो हाल के सभी प्रयास दिखाएं
+        setResults(myTests.length > 0 ? myTests : allAttempts);
+      }
 
-      // 4. Alerts
+      // 3. Alerts
       const { data: examsData } = await supabase
         .from('exam_alerts')
         .select('*');
       if (examsData) setExamAlerts(examsData);
-
-      // 5. Materials
-      const { data: matData } = await supabase
-        .from('study_materials')
-        .select('*')
-        .order('id', { ascending: false });
-      if (matData) setMaterials(matData);
 
       setLoading(false);
     }
@@ -93,40 +86,28 @@ export default function SuperDashboard() {
     return days > 0 ? `${days} दिन शेष` : 'Exam Active';
   };
 
-  // Real Streak & Accuracy
-  const calculateRealStreak = () => {
-    if (results.length === 0) return 0;
-    const uniqueDates = new Set(
-      results.map((r) => new Date(r.created_at || Date.now()).toISOString().split('T')[0])
-    );
-    return uniqueDates.size;
-  };
-
+  // वास्तविक एक्यूरेसी: (कुल सही प्रश्न / कुल हल किए गए प्रश्न) * 100
   const calculateRealAccuracy = () => {
     if (results.length === 0) return 0;
-    let totalScoreObtained = 0;
-    let totalMaxScore = 0;
+    let totalCorrect = 0;
+    let totalAttempted = 0;
+
     results.forEach((r) => {
-      totalScoreObtained += (r.score || 0);
-      totalMaxScore += (r.total_questions ? r.total_questions * 2 : r.total_marks || 20);
+      const correct = Number(r.correct_count || 0);
+      const wrong = Number(r.incorrect_count || 0);
+      totalCorrect += correct;
+      totalAttempted += (correct + wrong);
     });
-    if (totalMaxScore === 0) return 0;
-    return Math.round((totalScoreObtained / totalMaxScore) * 100);
+
+    if (totalAttempted === 0) return 0;
+    return Math.round((totalCorrect / totalAttempted) * 100);
   };
 
-  // कुल गलत प्रश्न (कमजोरी विश्लेषण के लिए)
-  const calculateTotalIncorrect = () => {
-    return results.reduce((acc, r) => acc + (r.incorrect_count || (r.wrong_answers ? r.wrong_answers : 0)), 0);
-  };
-
-  if (loading) {
-    return (
-      <div className="min-h-screen bg-slate-950 text-white flex flex-col items-center justify-center font-sans">
-        <div className="w-12 h-12 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin mb-4"></div>
-        <p className="text-sm font-medium text-slate-400">पोर्टल लोड हो रहा है...</p>
-      </div>
-    );
-  }
+  // कुल अर्जित प्राप्तांक
+  const totalScore = Number(results.reduce((acc, curr) => acc + (Number(curr.score) || 0), 0).toFixed(2));
+  const totalIncorrect = results.reduce((acc, r) => acc + (Number(r.incorrect_count) || 0), 0);
+  const realAccuracy = calculateRealAccuracy();
+  const studentDisplayName = user?.user_metadata?.full_name || user?.email?.split('@')[0] || 'विद्यार्थी';
 
   // 2-Level Filter
   const filteredTests = tests.filter((t) => {
@@ -148,21 +129,16 @@ export default function SuperDashboard() {
 
   // Leaderboard Calculation
   const calculateOverallLeaderboard = () => {
-    const userTotals: { [email: string]: { totalScore: number; testsGiven: number; name: string } } = {};
+    const userTotals: { [name: string]: { totalScore: number; testsGiven: number; name: string } } = {};
     allScores.forEach((row) => {
-      const email = row.user_email || 'student@exampro.com';
-      if (!userTotals[email]) {
-        userTotals[email] = {
-          totalScore: 0,
-          testsGiven: 0,
-          name: row.user_name || email.split('@')[0],
-        };
+      const name = row.student_name || 'विद्यार्थी';
+      if (!userTotals[name]) {
+        userTotals[name] = { totalScore: 0, testsGiven: 0, name };
       }
-      userTotals[email].totalScore += (row.score || 0);
-      userTotals[email].testsGiven += 1;
+      userTotals[name].totalScore += (Number(row.score) || 0);
+      userTotals[name].testsGiven += 1;
     });
-    return Object.entries(userTotals)
-      .map(([email, d]) => ({ email, ...d }))
+    return Object.values(userTotals)
       .sort((a, b) => b.totalScore - a.totalScore)
       .slice(0, 10);
   };
@@ -170,7 +146,7 @@ export default function SuperDashboard() {
   const calculateTestLeaderboard = (testId: number) => {
     return allScores
       .filter((row) => Number(row.test_id) === testId)
-      .sort((a, b) => (b.score || 0) - (a.score || 0))
+      .sort((a, b) => (Number(b.score) || 0) - (Number(a.score) || 0))
       .slice(0, 10);
   };
 
@@ -179,11 +155,14 @@ export default function SuperDashboard() {
       ? calculateOverallLeaderboard()
       : calculateTestLeaderboard(Number(selectedLeaderboardTest));
 
-  const totalScore = results.reduce((acc, curr) => acc + (curr.score || 0), 0);
-  const realStreak = calculateRealStreak();
-  const realAccuracy = calculateRealAccuracy();
-  const totalIncorrect = calculateTotalIncorrect();
-  const studentDisplayName = user?.user_metadata?.full_name || user?.email?.split('@')[0] || 'विद्यार्थी';
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-slate-950 text-white flex flex-col items-center justify-center font-sans">
+        <div className="w-12 h-12 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin mb-4"></div>
+        <p className="text-sm font-medium text-slate-400">पोर्टल लोड हो रहा है...</p>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans select-none">
@@ -243,47 +222,8 @@ export default function SuperDashboard() {
           </div>
         </div>
 
-        {/* Exam Alerts Carousel */}
-        {examAlerts.length > 0 && (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {examAlerts.map((ex, i) => (
-              <div
-                key={i}
-                className="bg-slate-900/90 border border-indigo-500/30 p-4 rounded-2xl flex justify-between items-center shadow-lg"
-              >
-                <div>
-                  <span className="text-[10px] bg-indigo-500/20 text-indigo-400 border border-indigo-500/40 px-2 py-0.5 rounded-md font-bold uppercase">
-                    {ex.badge_text}
-                  </span>
-                  <h3 className="font-bold text-white text-sm mt-1">{ex.exam_name}</h3>
-                  <p className="text-[11px] text-slate-400">लक्ष्य दिनांक: {ex.exam_date}</p>
-                </div>
-                <div className="bg-indigo-600/20 border border-indigo-500/40 text-indigo-300 font-black text-sm px-3.5 py-2 rounded-xl">
-                  ⏳ {getDaysLeft(ex.exam_date)}
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-
         {/* Real Stats + Weakness Alert Cards */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-          <div className="bg-slate-900 border border-slate-800 p-5 rounded-2xl flex items-center gap-4">
-            <div className="w-12 h-12 rounded-xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-xl">🔥</div>
-            <div>
-              <p className="text-xs text-slate-400 font-semibold uppercase">Study Streak</p>
-              <p className="text-2xl font-black text-amber-400">{realStreak} {realStreak === 1 ? 'Day' : 'Days'}</p>
-            </div>
-          </div>
-
-          <div className="bg-slate-900 border border-slate-800 p-5 rounded-2xl flex items-center gap-4">
-            <div className="w-12 h-12 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-xl">🎯</div>
-            <div>
-              <p className="text-xs text-slate-400 font-semibold uppercase">कुल स्कोर</p>
-              <p className="text-2xl font-black text-emerald-400">{totalScore} Marks</p>
-            </div>
-          </div>
-
           <div className="bg-slate-900 border border-slate-800 p-5 rounded-2xl flex items-center gap-4">
             <div className="w-12 h-12 rounded-xl bg-purple-500/10 border border-purple-500/20 flex items-center justify-center text-xl">📝</div>
             <div>
@@ -292,15 +232,31 @@ export default function SuperDashboard() {
             </div>
           </div>
 
+          <div className="bg-slate-900 border border-slate-800 p-5 rounded-2xl flex items-center gap-4">
+            <div className="w-12 h-12 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-xl">🎯</div>
+            <div>
+              <p className="text-xs text-slate-400 font-semibold uppercase">कुल अर्जित प्राप्तांक</p>
+              <p className="text-2xl font-black text-emerald-400">{totalScore} Marks</p>
+            </div>
+          </div>
+
+          <div className="bg-slate-900 border border-slate-800 p-5 rounded-2xl flex items-center gap-4">
+            <div className="w-12 h-12 rounded-xl bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center text-xl">⚡</div>
+            <div>
+              <p className="text-xs text-slate-400 font-semibold uppercase">सटीकता (Accuracy)</p>
+              <p className="text-2xl font-black text-indigo-400">{realAccuracy}%</p>
+            </div>
+          </div>
+
           <div className="bg-rose-950/20 border border-rose-900/40 p-5 rounded-2xl flex flex-col justify-center">
             <span className="text-xs text-rose-400 font-bold flex items-center gap-1">
-              ⚠️ कमजोरी अलर्ट (Weakness)
+              ⚠️ कमजोरी विश्लेषण
             </span>
             <p className="text-[11px] text-slate-300 mt-1 leading-snug">
               {totalIncorrect > 0 ? (
-                <>कुल <b>{totalIncorrect} गलत प्रश्न</b> हुए हैं। गलत टॉपिक्स का रिवीज़न करें।</>
+                <>कुल <b>{totalIncorrect} प्रश्न गलत</b> हुए हैं। कठिन प्रश्नों का रिवीज़न करें।</>
               ) : (
-                <>✨ कोई गंभीर कमजोरी नहीं! प्रदर्शन उत्कृष्ट है।</>
+                <>✨ शानदार! कोई गलत प्रश्न दर्ज नहीं हुआ।</>
               )}
             </p>
           </div>
@@ -425,9 +381,8 @@ export default function SuperDashboard() {
 
             <div className="space-y-2.5 max-h-[300px] overflow-y-auto pr-1">
               {currentLeaderboard.map((item: any, idx: number) => {
-                const email = item.email || item.user_email;
-                const isCurrent = email === user?.email;
-                const displayName = item.name || item.user_name || email?.split('@')[0] || 'विद्यार्थी';
+                const displayName = item.name || item.student_name || 'विद्यार्थी';
+                const isCurrent = displayName === studentDisplayName;
 
                 return (
                   <div
