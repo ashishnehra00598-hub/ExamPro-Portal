@@ -18,22 +18,19 @@ export default function AdminControlMaster() {
   const [statusMsg, setStatusMsg] = useState('');
   const [loading, setLoading] = useState(false);
 
-  // Test Creation State
   const [testTitle, setTestTitle] = useState('');
   const [testDesc, setTestDesc] = useState('');
   const [testCategory, setTestCategory] = useState('Rajasthan CET (10+2)');
   const [testType, setTestType] = useState('Full Mock Test');
   const [testDuration, setTestDuration] = useState(60);
   const [testMarks, setTestMarks] = useState(100);
-  const [negativeMarks, setNegativeMarks] = useState(0.50); // कस्टम नेगेटिव मार्किंग
+  const [negativeMarks, setNegativeMarks] = useState(0.50);
 
-  // Question State
   const [selectedTestId, setSelectedTestId] = useState(1);
   const [testsList, setTestsList] = useState<any[]>([]);
   const [rawTextInput, setRawTextInput] = useState('');
   const [defaultMarks, setDefaultMarks] = useState(2);
 
-  // Exam Alert & Notes State
   const [examName, setExamName] = useState('');
   const [examDate, setExamDate] = useState('');
   const [examBadge, setExamBadge] = useState('Imp Exam');
@@ -61,7 +58,6 @@ export default function AdminControlMaster() {
     verifyAdmin();
   }, [tab]);
 
-  // Clean Citation Tags
   const cleanCitationTags = (str: string) => {
     if (!str) return '';
     return str
@@ -71,7 +67,7 @@ export default function AdminControlMaster() {
       .trim();
   };
 
-  // Robust Parser
+  // कथन और बहु-पंक्ति प्रश्नों को सुरक्षित पार्स करने वाला फ़ंक्शन
   const parseQuestionsRobust = (text: string) => {
     const rawLines = text.split('\n').map((l) => l.trim()).filter((l) => l.length > 0);
     const questions: any[] = [];
@@ -79,13 +75,15 @@ export default function AdminControlMaster() {
 
     for (let i = 0; i < rawLines.length; i++) {
       const line = rawLines[i];
-      const isQuestionLine = /^(Q\s*\d+|प्रश्न\s*\d+|\d+)[\.\:\)\s]/i.test(line);
 
-      if (isQuestionLine) {
+      // केवल Q1, Q.1, प्रश्न 1 से नया प्रश्न शुरू होगा (कथन 1., 2. को प्रश्न का हिस्सा माना जाएगा)
+      const isNewQuestion = /^(Q\s*\.?\s*\d+|प्रश्न\s*\.?\s*\d+)[\.\:\)\s\-]/i.test(line);
+
+      if (isNewQuestion) {
         if (currentQ && currentQ.question_text && currentQ.options.length >= 2) {
           questions.push(currentQ);
         }
-        const cleanedQ = cleanCitationTags(line.replace(/^(Q\s*\d+|प्रश्न\s*\d+|\d+)[\.\:\)\s]*/i, ''));
+        const cleanedQ = cleanCitationTags(line.replace(/^(Q\s*\.?\s*\d+|प्रश्न\s*\.?\s*\d+)[\.\:\)\s\-]*/i, ''));
         currentQ = {
           test_id: Number(selectedTestId),
           question_text: cleanedQ,
@@ -107,24 +105,30 @@ export default function AdminControlMaster() {
         continue;
       }
 
-      const isOptA = /^[A1a][\.\:\)\s\-]/i.test(line);
-      const isOptB = /^[B2b][\.\:\)\s\-]/i.test(line);
-      const isOptC = /^[C3c][\.\:\)\s\-]/i.test(line);
-      const isOptD = /^[D4d][\.\:\)\s\-]/i.test(line);
+      // Options detection (A., B., C., D. या (A), (B))
+      const isOptA = /^(\([A1a]\)|[A1a][\.\:\)\s\-])/i.test(line);
+      const isOptB = /^(\([B2b]\)|[B2b][\.\:\)\s\-])/i.test(line);
+      const isOptC = /^(\([C3c]\)|[C3c][\.\:\)\s\-])/i.test(line);
+      const isOptD = /^(\([D4d]\)|[D4d][\.\:\)\s\-])/i.test(line);
 
-      if (isOptA) currentQ.options[0] = cleanCitationTags(line.replace(/^[A1a][\.\:\)\s\-]*/i, ''));
-      else if (isOptB) currentQ.options[1] = cleanCitationTags(line.replace(/^[B2b][\.\:\)\s\-]*/i, ''));
-      else if (isOptC) currentQ.options[2] = cleanCitationTags(line.replace(/^[C3c][\.\:\)\s\-]*/i, ''));
-      else if (isOptD) currentQ.options[3] = cleanCitationTags(line.replace(/^[D4d][\.\:\)\s\-]*/i, ''));
-      else if (/^(Ans|Answer|उत्तर|सही उत्तर)[\s\.\:\-\=]*/i.test(line)) {
+      if (isOptA) {
+        currentQ.options[0] = cleanCitationTags(line.replace(/^(\([A1a]\)|[A1a][\.\:\)\s\-])\s*/i, ''));
+      } else if (isOptB) {
+        currentQ.options[1] = cleanCitationTags(line.replace(/^(\([B2b]\)|[B2b][\.\:\)\s\-])\s*/i, ''));
+      } else if (isOptC) {
+        currentQ.options[2] = cleanCitationTags(line.replace(/^(\([C3c]\)|[C3c][\.\:\)\s\-])\s*/i, ''));
+      } else if (isOptD) {
+        currentQ.options[3] = cleanCitationTags(line.replace(/^(\([D4d]\)|[D4d][\.\:\)\s\-])\s*/i, ''));
+      } else if (/^(Ans|Answer|उत्तर|सही उत्तर)[\s\.\:\-\=]*/i.test(line)) {
         const val = cleanCitationTags(line.replace(/^(Ans|Answer|उत्तर|सही उत्तर)[\s\.\:\-\=]*/i, '')).toUpperCase();
         if (val.startsWith('A') || val === '1') currentQ.correct_option = 0;
         else if (val.startsWith('B') || val === '2') currentQ.correct_option = 1;
         else if (val.startsWith('C') || val === '3') currentQ.correct_option = 2;
         else if (val.startsWith('D') || val === '4') currentQ.correct_option = 3;
       } else {
+        // कथन (1, 2, 3) या अतिरिक्त प्रश्न विवरण को प्रश्न में जोड़ना
         if (currentQ.options.length === 0) {
-          currentQ.question_text += ' ' + cleanCitationTags(line);
+          currentQ.question_text += '\n' + cleanCitationTags(line);
         }
       }
     }
@@ -156,7 +160,7 @@ export default function AdminControlMaster() {
       }
 
       if (finalQuestions.length === 0) {
-        throw new Error('कोई सवाल सही से नहीं पढ़ा जा सका।');
+        throw new Error('कोई सवाल सही से नहीं पढ़ा जा सका। कृपया फॉर्मेट जाँचें (जैसे Q1. प्रश्न... A. B. C. D. Answer: A)');
       }
 
       const chunkSize = 30;
@@ -167,7 +171,7 @@ export default function AdminControlMaster() {
       }
 
       setLoading(false);
-      setStatusMsg(`शानदार! कुल ${finalQuestions.length} सवाल Test #${selectedTestId} में सेव हो गए।`);
+      setStatusMsg(`शानदार! कुल ${finalQuestions.length} सवाल पूरे कथनों के साथ Test #${selectedTestId} में सेव हो गए।`);
       setRawTextInput('');
     } catch (err: any) {
       setLoading(false);
@@ -187,13 +191,13 @@ export default function AdminControlMaster() {
         test_type: testType,
         duration_minutes: testDuration,
         total_marks: testMarks,
-        negative_marks: Number(negativeMarks), // सेव नेगेटिव मार्किंग
+        negative_marks: Number(negativeMarks),
       },
     ]);
     setLoading(false);
     if (error) setStatusMsg('Error: ' + error.message);
     else {
-      setStatusMsg(`नया टेस्ट [${testCategory} - ${testType}] सफलता से बन गया! (Negative: -${negativeMarks})`);
+      setStatusMsg(`नया टेस्ट [${testCategory} - ${testType}] सफलता से बन गया!`);
       setTestTitle('');
       setTestDesc('');
       const { data } = await supabase.from('tests').select('id, title, category, test_type, negative_marks');
@@ -242,12 +246,12 @@ export default function AdminControlMaster() {
   }
 
   return (
-    <main className="min-h-screen bg-slate-950 text-slate-100 p-6 md:p-10 font-sans">
-      <div className="max-w-4xl mx-auto bg-slate-900 border border-slate-800 rounded-3xl p-8 shadow-2xl">
+    <main className="min-h-screen bg-slate-950 text-slate-100 p-4 md:p-10 font-sans">
+      <div className="max-w-4xl mx-auto bg-slate-900 border border-slate-800 rounded-3xl p-6 md:p-8 shadow-2xl">
         <div className="flex justify-between items-center mb-6">
           <div>
             <h1 className="text-xl font-black text-white">Smart Admin Master Controller 🔒</h1>
-            <p className="text-xs text-slate-400">कस्टम नेगेटिव मार्किंग और टेस्ट कंट्रोल</p>
+            <p className="text-xs text-slate-400">कथन आधारित प्रश्न एवं टेस्ट कंट्रोल</p>
           </div>
           <button
             onClick={() => (window.location.href = '/dashboard')}
@@ -286,10 +290,9 @@ export default function AdminControlMaster() {
           </div>
         )}
 
-        {/* Tab 1: Questions */}
         {tab === 'questions' && (
           <form onSubmit={handleSmartUpload} className="space-y-4">
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
                 <label className="block text-xs font-semibold text-slate-300 mb-1">टेस्ट चुनें</label>
                 <select
@@ -316,15 +319,15 @@ export default function AdminControlMaster() {
 
             <div>
               <div className="flex justify-between items-center mb-1">
-                <label className="text-xs font-semibold text-slate-300">सवाल यहाँ पेस्ट करें:</label>
-                <span className="text-[11px] text-emerald-400 font-medium">Auto-Filter Active</span>
+                <label className="text-xs font-semibold text-slate-300">सवाल यहाँ पेस्ट करें (कथन सहित पूरा पेस्ट करें):</label>
+                <span className="text-[11px] text-emerald-400 font-medium">Statements Protected</span>
               </div>
               <textarea
                 required
                 rows={12}
                 value={rawTextInput}
                 onChange={(e) => setRawTextInput(e.target.value)}
-                placeholder={`1. राजस्थान का राज्य वृक्ष क्या है?\nA. खेजड़ी\nB. नीम\nC. बबूल\nD. रोहिड़ा\nAnswer: A`}
+                placeholder={`Q1. भटनेर दुर्ग के संदर्भ में निम्न कथनों पर विचार कीजिये-\n1. यह भारत के सबसे पुराने किलो में से एक है।\n2. इसे उत्तरी सीमा का प्रहरी भी कहा जाता है।\n3. 52 बीघा भूमि इसमें स्थित है।\nउपरोक्त में से कौनसा कथन सत्य हैं?\nA. केवल 1 व 2\nB. केवल 2 व 3\nC. केवल 1 व 3\nD. 1, 2 व 3\nAnswer: D`}
                 className="w-full font-mono text-xs p-4 bg-slate-950 border border-slate-800 rounded-2xl text-indigo-300 outline-none focus:border-indigo-500"
               />
             </div>
@@ -339,7 +342,6 @@ export default function AdminControlMaster() {
           </form>
         )}
 
-        {/* Tab 2: Create Test (With Custom Negative Marking) */}
         {tab === 'tests' && (
           <form onSubmit={handleAddTest} className="space-y-4">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -358,7 +360,7 @@ export default function AdminControlMaster() {
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-slate-300 mb-1">📑 2. टेस्ट का प्रकार (Test Type)</label>
+                <label className="block text-xs font-semibold text-slate-300 mb-1">📑 2. टेस्ट का प्रकार</label>
                 <select
                   value={testType}
                   onChange={(e) => setTestType(e.target.value)}
@@ -405,7 +407,7 @@ export default function AdminControlMaster() {
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-slate-300 mb-1">कुल अंक (Total Marks)</label>
+                <label className="block text-xs font-semibold text-slate-300 mb-1">कुल पूर्णांक (Total Marks)</label>
                 <input
                   type="number"
                   value={testMarks}
@@ -414,9 +416,8 @@ export default function AdminControlMaster() {
                 />
               </div>
 
-              {/* नेगेटिव मार्किंग चयन बॉक्स */}
               <div>
-                <label className="block text-xs font-semibold text-rose-400 mb-1">❌ नेगेटिव मार्किंग (गलत उत्तर पर)</label>
+                <label className="block text-xs font-semibold text-rose-400 mb-1">❌ नेगेटिव मार्किंग</label>
                 <select
                   value={negativeMarks}
                   onChange={(e) => setNegativeMarks(Number(e.target.value))}
@@ -442,7 +443,6 @@ export default function AdminControlMaster() {
           </form>
         )}
 
-        {/* Tab 3 & 4 */}
         {tab === 'exams' && (
           <form onSubmit={handleAddExam} className="space-y-4">
             <div>
@@ -498,7 +498,7 @@ export default function AdminControlMaster() {
                   required
                   value={matTitle}
                   onChange={(e) => setMatTitle(e.target.value)}
-                  placeholder="उदा. राजस्थान सामान्य ज्ञान नोट्स"
+                  placeholder="उदा. राजस्थान भूगोल PYQ"
                   className="w-full p-3 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white outline-none"
                 />
               </div>
