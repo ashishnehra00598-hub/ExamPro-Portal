@@ -21,6 +21,7 @@ export default function ProfessionalTestPortal() {
   const [userEmail, setUserEmail] = useState('student@portal.com');
   const [userName, setUserName] = useState('Student');
   const [showSubmitModal, setShowSubmitModal] = useState(false);
+  const [showPaletteMobile, setShowPaletteMobile] = useState(false);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -34,7 +35,6 @@ export default function ProfessionalTestPortal() {
         setUserName(user.user_metadata?.full_name || user.email.split('@')[0]);
       }
 
-      // Test details (including negative_marks)
       const { data: tData } = await supabase
         .from('tests')
         .select('*')
@@ -47,7 +47,6 @@ export default function ProfessionalTestPortal() {
         setTimeLeft(exactMinutes * 60);
       }
 
-      // Questions
       const { data: qData } = await supabase
         .from('questions')
         .select('*')
@@ -127,9 +126,9 @@ export default function ProfessionalTestPortal() {
     if (statusMap[index] === 'not_visited') {
       setStatusMap((prev) => ({ ...prev, [index]: 'unanswered' }));
     }
+    setShowPaletteMobile(false);
   };
 
-  // डायनामिक नेगेटिव मार्किंग से स्कोर की गणना
   const calculateResults = () => {
     let correct = 0;
     let wrong = 0;
@@ -143,7 +142,7 @@ export default function ProfessionalTestPortal() {
           score += (q.marks || 2);
         } else {
           wrong++;
-          score -= testNegative; // एडमिन द्वारा सेट की गई नेगेटिव मार्किंग
+          score -= testNegative;
         }
       }
     });
@@ -183,14 +182,20 @@ export default function ProfessionalTestPortal() {
     );
   }
 
+  // जब टेस्ट में कोई सवाल न हो तो साफ़ छात्र संदेश
   if (questions.length === 0) {
     return (
       <div className="min-h-screen bg-slate-950 text-white flex flex-col items-center justify-center p-6 text-center font-sans">
-        <h2 className="text-xl font-bold mb-2">इस टेस्ट में अभी कोई सवाल नहीं है!</h2>
-        <p className="text-xs text-slate-400 mb-6">कृपया एडमिन पैनल से Test #{testId} में सवाल अपलोड करें।</p>
+        <div className="w-16 h-16 bg-indigo-500/10 border border-indigo-500/30 rounded-3xl flex items-center justify-center text-2xl mb-4">
+          📝
+        </div>
+        <h2 className="text-xl font-bold mb-2">यह टेस्ट जल्द ही लाइव होगा!</h2>
+        <p className="text-xs text-slate-400 mb-6 max-w-sm">
+          इस टेस्ट के प्रश्न जल्द उपलब्ध कराए जाएँगे। कृपया अन्य मॉक टेस्ट का अभ्यास करें।
+        </p>
         <button
           onClick={() => (window.location.href = '/dashboard')}
-          className="bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold px-6 py-3 rounded-xl"
+          className="bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold px-6 py-3 rounded-xl shadow-lg"
         >
           डैशबोर्ड पर वापस जाएँ
         </button>
@@ -250,70 +255,80 @@ export default function ProfessionalTestPortal() {
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans select-none">
-      <header className="bg-slate-900 border-b border-slate-800 px-6 py-3.5 flex justify-between items-center shadow-md">
-        <div className="flex items-center gap-3">
-          <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-indigo-500 to-blue-600 flex items-center justify-center font-bold text-white shadow-md">
+      {/* Header */}
+      <header className="sticky top-0 z-40 bg-slate-900 border-b border-slate-800 px-4 md:px-6 py-3 flex justify-between items-center shadow-md">
+        <div className="flex items-center gap-2 md:gap-3">
+          <div className="w-8 h-8 md:w-9 md:h-9 rounded-xl bg-gradient-to-tr from-indigo-500 to-blue-600 flex items-center justify-center font-bold text-white shadow-md text-xs md:text-sm">
             EX
           </div>
           <div>
-            <h1 className="font-bold text-base text-white">{testDetails?.title || `Live Mock Test #${testId}`}</h1>
-            <p className="text-xs text-slate-400">समय: {testDetails?.duration_minutes || 10} मिनट • Negative Marking: -{activeNeg}</p>
+            <h1 className="font-bold text-xs md:text-sm text-white truncate max-w-[130px] md:max-w-xs">{testDetails?.title || `Test #${testId}`}</h1>
+            <p className="text-[10px] md:text-xs text-slate-400">Time: {testDetails?.duration_minutes}m • Neg: -{activeNeg}</p>
           </div>
         </div>
 
-        <div className="flex items-center gap-4">
-          <div className="bg-slate-800 border border-slate-700 px-4 py-1.5 rounded-xl flex items-center gap-2">
-            <span className="w-2.5 h-2.5 rounded-full bg-rose-500 animate-pulse"></span>
-            <span className="text-xs font-medium text-slate-400">समय:</span>
-            <span className="font-mono text-base font-bold text-rose-400">{formatTime(timeLeft)}</span>
+        <div className="flex items-center gap-2 md:gap-4">
+          <div className="bg-slate-800 border border-slate-700 px-2.5 md:px-4 py-1 rounded-xl flex items-center gap-1.5 md:gap-2">
+            <span className="w-2 h-2 rounded-full bg-rose-500 animate-pulse"></span>
+            <span className="font-mono text-xs md:text-sm font-bold text-rose-400">{formatTime(timeLeft)}</span>
           </div>
 
           <button
-            onClick={() => setShowSubmitModal(true)}
-            className="bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold px-4 py-2 rounded-xl transition shadow"
+            onClick={() => setShowPaletteMobile(!showPaletteMobile)}
+            className="md:hidden bg-slate-800 border border-slate-700 text-slate-200 text-xs px-2.5 py-1.5 rounded-xl font-bold"
           >
-            Submit Exam
+            📋 {currentIdx + 1}/{questions.length}
+          </button>
+
+          <button
+            onClick={() => setShowSubmitModal(true)}
+            className="bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold px-3 md:px-4 py-1.5 md:py-2 rounded-xl transition shadow"
+          >
+            Submit
           </button>
         </div>
       </header>
 
-      <div className="flex-1 flex overflow-hidden">
-        <main className="flex-1 flex flex-col bg-slate-900/50 p-6 overflow-y-auto border-r border-slate-800">
+      {/* Main Body */}
+      <div className="flex-1 flex overflow-hidden relative">
+        <main className="flex-1 flex flex-col bg-slate-900/40 p-4 md:p-6 overflow-y-auto pb-24 md:pb-6">
           <div className="max-w-3xl w-full mx-auto flex-1 flex flex-col justify-between">
             <div>
-              <div className="flex justify-between items-center pb-4 mb-6 border-b border-slate-800">
-                <span className="text-xs font-bold tracking-wider text-indigo-400 uppercase">
-                  प्रश्न संख्या: {currentIdx + 1} of {questions.length}
+              <div className="flex justify-between items-center pb-3 mb-4 border-b border-slate-800 text-xs">
+                <span className="font-bold tracking-wider text-indigo-400 uppercase">
+                  प्रश्न {currentIdx + 1} / {questions.length}
                 </span>
-                <div className="flex gap-3 text-xs">
-                  <span className="text-emerald-400 bg-emerald-950/40 border border-emerald-800/40 px-2 py-0.5 rounded-md">
-                    +{currentQ?.marks || 2} अंक
+                <div className="flex gap-2">
+                  <span className="text-emerald-400 bg-emerald-950/40 border border-emerald-800/40 px-2 py-0.5 rounded-md text-[11px] font-bold">
+                    +{currentQ?.marks || 2}
                   </span>
-                  <span className="text-rose-400 bg-rose-950/40 border border-rose-800/40 px-2 py-0.5 rounded-md">
-                    -{activeNeg} नेगेटिव
+                  <span className="text-rose-400 bg-rose-950/40 border border-rose-800/40 px-2 py-0.5 rounded-md text-[11px] font-bold">
+                    -{activeNeg}
                   </span>
                 </div>
               </div>
 
-              <h2 className="text-lg font-semibold text-slate-100 leading-relaxed mb-8">
+              {/* कथन और प्रश्न को सुरक्षित मल्टी-लाइन में दिखाना */}
+              <div className="text-sm md:text-base font-semibold text-slate-100 leading-relaxed mb-6 whitespace-pre-line">
                 {currentQ?.question_text}
-              </h2>
+              </div>
 
-              <div className="space-y-3.5">
+              {/* Options */}
+              <div className="space-y-3">
                 {optionsList.map((opt: string, i: number) => {
                   const isChecked = selectedAnswers[currentIdx] === i;
                   return (
                     <label
                       key={i}
                       onClick={() => handleSelectOption(i)}
-                      className={`flex items-center gap-4 p-4 rounded-2xl border cursor-pointer transition-all duration-150 ${
+                      className={`flex items-center gap-3.5 p-3.5 md:p-4 rounded-2xl border cursor-pointer transition ${
                         isChecked
-                          ? 'bg-indigo-600/15 border-indigo-500 text-white shadow-md shadow-indigo-950/50'
-                          : 'bg-slate-800/60 border-slate-700/60 text-slate-300 hover:bg-slate-800 hover:border-slate-600'
+                          ? 'bg-indigo-600/20 border-indigo-500 text-white shadow-md shadow-indigo-950/50'
+                          : 'bg-slate-800/70 border-slate-700/60 text-slate-300 hover:bg-slate-800'
                       }`}
                     >
                       <div
-                        className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold border ${
+                        className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold border shrink-0 ${
                           isChecked
                             ? 'bg-indigo-500 border-indigo-400 text-white'
                             : 'border-slate-600 text-slate-400'
@@ -321,62 +336,27 @@ export default function ProfessionalTestPortal() {
                       >
                         {String.fromCharCode(65 + i)}
                       </div>
-                      <span className="text-sm font-medium">{opt}</span>
+                      <span className="text-xs md:text-sm font-medium">{opt}</span>
                     </label>
                   );
                 })}
               </div>
             </div>
-
-            <div className="flex flex-wrap items-center justify-between gap-3 pt-6 mt-8 border-t border-slate-800">
-              <div className="flex gap-2">
-                <button
-                  onClick={handleClearResponse}
-                  className="px-4 py-2 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 rounded-xl text-xs font-semibold transition"
-                >
-                  Clear Response
-                </button>
-                <button
-                  onClick={handleMarkForReview}
-                  className="px-4 py-2 bg-purple-950/60 hover:bg-purple-900/80 border border-purple-700/50 text-purple-300 rounded-xl text-xs font-semibold transition"
-                >
-                  Mark for Review & Next
-                </button>
-              </div>
-
-              <div className="flex gap-2">
-                <button
-                  disabled={currentIdx === 0}
-                  onClick={() => setCurrentIdx(currentIdx - 1)}
-                  className="px-5 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 rounded-xl text-xs font-semibold disabled:opacity-40 transition"
-                >
-                  Previous
-                </button>
-                <button
-                  onClick={handleSaveAndNext}
-                  className="px-6 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-bold transition shadow-md shadow-indigo-950"
-                >
-                  Save & Next
-                </button>
-              </div>
-            </div>
           </div>
         </main>
 
-        <aside className="w-80 bg-slate-900 p-6 flex flex-col justify-between hidden md:flex">
+        {/* Desktop Question Palette */}
+        <aside className="w-80 bg-slate-900 p-6 flex-col justify-between hidden md:flex border-l border-slate-800">
           <div>
-            <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-4">
-              Question Palette
-            </h3>
-
-            <div className="grid grid-cols-2 gap-2 text-[11px] mb-6 border-b border-slate-800 pb-4 text-slate-300">
-              <div className="flex items-center gap-2"><span className="w-3.5 h-3.5 rounded bg-emerald-500"></span> Answered</div>
-              <div className="flex items-center gap-2"><span className="w-3.5 h-3.5 rounded bg-rose-500"></span> Not Answered</div>
-              <div className="flex items-center gap-2"><span className="w-3.5 h-3.5 rounded bg-purple-600"></span> Review</div>
-              <div className="flex items-center gap-2"><span className="w-3.5 h-3.5 rounded bg-slate-700"></span> Not Visited</div>
+            <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-4">Question Palette</h3>
+            <div className="grid grid-cols-2 gap-2 text-[11px] mb-4 border-b border-slate-800 pb-3 text-slate-300">
+              <div className="flex items-center gap-2"><span className="w-3 h-3 rounded bg-emerald-500"></span> Answered</div>
+              <div className="flex items-center gap-2"><span className="w-3 h-3 rounded bg-rose-500"></span> Unanswered</div>
+              <div className="flex items-center gap-2"><span className="w-3 h-3 rounded bg-purple-600"></span> Review</div>
+              <div className="flex items-center gap-2"><span className="w-3 h-3 rounded bg-slate-700"></span> Not Visited</div>
             </div>
 
-            <div className="grid grid-cols-5 gap-2.5 max-h-[340px] overflow-y-auto pr-1">
+            <div className="grid grid-cols-5 gap-2 max-h-[340px] overflow-y-auto pr-1">
               {questions.map((_, idx) => {
                 const st = statusMap[idx] || 'not_visited';
                 let bgClass = 'bg-slate-800 text-slate-400 border border-slate-700';
@@ -386,12 +366,11 @@ export default function ProfessionalTestPortal() {
                 if (st === 'review_answered') bgClass = 'bg-purple-600 border-2 border-emerald-400 text-white';
 
                 const isCurrent = currentIdx === idx;
-
                 return (
                   <button
                     key={idx}
                     onClick={() => handleJumpToQuestion(idx)}
-                    className={`h-10 rounded-xl text-xs font-bold transition flex items-center justify-center ${bgClass} ${
+                    className={`h-9 rounded-xl text-xs font-bold transition flex items-center justify-center ${bgClass} ${
                       isCurrent ? 'ring-2 ring-indigo-400 ring-offset-2 ring-offset-slate-900' : ''
                     }`}
                   >
@@ -402,34 +381,102 @@ export default function ProfessionalTestPortal() {
             </div>
           </div>
 
-          <div className="pt-4 border-t border-slate-800">
+          <button
+            onClick={() => setShowSubmitModal(true)}
+            className="w-full bg-emerald-600 hover:bg-emerald-500 text-white py-3 rounded-xl font-bold text-xs transition shadow-lg"
+          >
+            Submit Test
+          </button>
+        </aside>
+
+        {/* Mobile Question Palette Modal */}
+        {showPaletteMobile && (
+          <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm p-4 flex flex-col justify-end md:hidden">
+            <div className="bg-slate-900 border border-slate-800 rounded-3xl p-5 max-h-[80vh] flex flex-col">
+              <div className="flex justify-between items-center mb-4">
+                <h3 className="text-xs font-bold text-white uppercase tracking-wider">Question Palette</h3>
+                <button onClick={() => setShowPaletteMobile(false)} className="text-slate-400 text-xs font-bold p-1">✕ बंद करें</button>
+              </div>
+              <div className="grid grid-cols-5 gap-2 overflow-y-auto p-1 flex-1">
+                {questions.map((_, idx) => {
+                  const st = statusMap[idx] || 'not_visited';
+                  let bgClass = 'bg-slate-800 text-slate-400 border border-slate-700';
+                  if (st === 'answered') bgClass = 'bg-emerald-600 text-white';
+                  if (st === 'unanswered') bgClass = 'bg-rose-600 text-white';
+                  if (st === 'review') bgClass = 'bg-purple-600 text-white';
+                  if (st === 'review_answered') bgClass = 'bg-purple-600 border-2 border-emerald-400 text-white';
+
+                  return (
+                    <button
+                      key={idx}
+                      onClick={() => handleJumpToQuestion(idx)}
+                      className={`h-10 rounded-xl text-xs font-bold flex items-center justify-center ${bgClass} ${
+                        currentIdx === idx ? 'ring-2 ring-indigo-400' : ''
+                      }`}
+                    >
+                      {idx + 1}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Sticky Bottom Actions Bar (Mobile Friendly) */}
+      <footer className="fixed bottom-0 left-0 right-0 z-40 bg-slate-900/95 backdrop-blur-md border-t border-slate-800 p-3 md:px-6">
+        <div className="max-w-3xl mx-auto flex items-center justify-between gap-2">
+          <div className="flex gap-2">
             <button
-              onClick={() => setShowSubmitModal(true)}
-              className="w-full bg-emerald-600 hover:bg-emerald-500 text-white py-3 rounded-xl font-bold text-xs transition shadow-lg"
+              onClick={handleClearResponse}
+              className="px-3 py-2 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 rounded-xl text-[11px] font-semibold"
             >
-              Submit Test Paper
+              Clear
+            </button>
+            <button
+              onClick={handleMarkForReview}
+              className="px-3 py-2 bg-purple-950/70 border border-purple-700/50 text-purple-300 rounded-xl text-[11px] font-semibold"
+            >
+              Review
             </button>
           </div>
-        </aside>
-      </div>
+
+          <div className="flex gap-2">
+            <button
+              disabled={currentIdx === 0}
+              onClick={() => setCurrentIdx(currentIdx - 1)}
+              className="px-4 py-2 bg-slate-800 border border-slate-700 text-slate-300 rounded-xl text-xs font-semibold disabled:opacity-40"
+            >
+              Prev
+            </button>
+            <button
+              onClick={handleSaveAndNext}
+              className="px-5 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-bold shadow-md"
+            >
+              Save & Next
+            </button>
+          </div>
+        </div>
+      </footer>
 
       {showSubmitModal && (
         <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-50">
           <div className="bg-slate-800 border border-slate-700 max-w-sm w-full p-6 rounded-3xl shadow-2xl text-center space-y-4">
-            <h3 className="text-lg font-bold text-white">क्या आप टेस्ट सबमिट करना चाहते हैं?</h3>
-            <p className="text-xs text-slate-400">सबमिट करने के बाद आप दोबारा उत्तर नहीं बदल सकेंगे।</p>
+            <h3 className="text-base font-bold text-white">क्या आप टेस्ट सबमिट करना चाहते हैं?</h3>
+            <p className="text-xs text-slate-400">सबमिट करने के बाद आप उत्तर नहीं बदल सकेंगे।</p>
             <div className="flex gap-3 pt-2">
               <button
                 onClick={() => setShowSubmitModal(false)}
-                className="flex-1 bg-slate-700 hover:bg-slate-600 text-slate-300 py-2.5 rounded-xl text-xs font-semibold transition"
+                className="flex-1 bg-slate-700 hover:bg-slate-600 text-slate-300 py-2.5 rounded-xl text-xs font-semibold"
               >
                 कैंसिल
               </button>
               <button
                 onClick={finalizeSubmission}
-                className="flex-1 bg-emerald-600 hover:bg-emerald-500 text-white py-2.5 rounded-xl text-xs font-bold transition"
+                className="flex-1 bg-emerald-600 hover:bg-emerald-500 text-white py-2.5 rounded-xl text-xs font-bold"
               >
-                हाँ, सबमिट करें
+                सबमिट करें
               </button>
             </div>
           </div>
