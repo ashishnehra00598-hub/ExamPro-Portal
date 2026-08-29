@@ -40,7 +40,6 @@ export default function AdminControlMaster() {
   const [rawTextInput, setRawTextInput] = useState('');
   const [defaultMarks, setDefaultMarks] = useState(2);
 
-  // Live Review & Edit State
   const [previewQuestions, setPreviewQuestions] = useState<ParsedQuestion[]>([]);
 
   const [examName, setExamName] = useState('');
@@ -79,6 +78,7 @@ export default function AdminControlMaster() {
       .trim();
   };
 
+  // सुपर-स्मार्ट पार्सर (कथन और Auto-Answer Detection)
   const parseQuestionsAdvanced = (text: string): ParsedQuestion[] => {
     const rawBlocks = text.split(/\n(?=(?:Q\s*\.?\s*\d+|प्रश्न\s*\.?\s*\d+)[\.\:\)\s\-])/i);
     const parsed: ParsedQuestion[] = [];
@@ -98,23 +98,31 @@ export default function AdminControlMaster() {
       for (let i = 0; i < lines.length; i++) {
         const line = lines[i];
 
+        // 1. प्रश्न संख्या हटाना
         if (i === 0 && /^(Q\s*\.?\s*\d+|प्रश्न\s*\.?\s*\d+)[\.\:\)\s\-]*/i.test(line)) {
           const cleanFirstLine = line.replace(/^(Q\s*\.?\s*\d+|प्रश्न\s*\.?\s*\d+)[\.\:\)\s\-]*/i, '').trim();
           if (cleanFirstLine) questionLines.push(cleanText(cleanFirstLine));
           continue;
         }
 
-        if (/^(Ans|Answer|उत्तर|सही उत्तर)[\s\.\:\-\=]*/i.test(line)) {
-          const ansVal = line.replace(/^(Ans|Answer|उत्तर|सही उत्तर)[\s\.\:\-\=]*/i, '').trim().toUpperCase();
-          if (ansVal.startsWith('A') || ansVal === '1' || ansVal.startsWith('क')) answerIndex = 0;
-          else if (ansVal.startsWith('B') || ansVal === '2' || ansVal.startsWith('ख')) answerIndex = 1;
-          else if (ansVal.startsWith('C') || ansVal === '3' || ansVal.startsWith('ग')) answerIndex = 2;
-          else if (ansVal.startsWith('D') || ansVal === '4' || ansVal.startsWith('घ')) answerIndex = 3;
+        // 2. सटीक उत्तर पहचानना (Answer: D, Ans: D, उत्तर: D, आदि)
+        if (/^(Ans|Answer|उत्तर|सही उत्तर|Correct Answer)[\s\.\:\-\=]*/i.test(line)) {
+          const rawAns = line.replace(/^(Ans|Answer|उत्तर|सही उत्तर|Correct Answer)[\s\.\:\-\=]*/i, '').trim();
+          // पहला कैरेक्टर निकालना
+          const matchChar = rawAns.match(/[A-Da-d1-4क-घ]/);
+          if (matchChar) {
+            const c = matchChar[0].toUpperCase();
+            if (c === 'A' || c === '1' || c === 'क') answerIndex = 0;
+            else if (c === 'B' || c === '2' || c === 'ख') answerIndex = 1;
+            else if (c === 'C' || c === '3' || c === 'ग') answerIndex = 2;
+            else if (c === 'D' || c === '4' || c === 'घ') answerIndex = 3;
+          }
           continue;
         }
 
-        const optMatch = line.match(/^(\([A-Da-d]\)|[A-Da-d][\.\:\)\-\s]+|\([1-4]\)|[1-4][\.\:\)\-\s]+|\([क-घ]\)|[क-घ][\.\:\)\-\s]+)(.*)/);
+        // 3. ऑप्शन्स पहचानना
         const isStrictOption = /^(\([A-Da-d]\)|[A-Da-d][\.\:\)\-\s]+|\([क-घ]\)|[क-घ][\.\:\)\-\s]+)/i.test(line);
+        const optMatch = line.match(/^(\([A-Da-d]\)|[A-Da-d][\.\:\)\-\s]+|\([1-4]\)|[1-4][\.\:\)\-\s]+|\([क-घ]\)|[क-घ][\.\:\)\-\s]+)(.*)/);
 
         if (isStrictOption) {
           inOptions = true;
@@ -124,6 +132,7 @@ export default function AdminControlMaster() {
           const optContent = optMatch[2].trim();
           options.push(cleanText(optContent));
         } else {
+          // कथन (1, 2, 3) या प्रश्न का शेष भाग
           questionLines.push(cleanText(line));
         }
       }
@@ -151,14 +160,26 @@ export default function AdminControlMaster() {
       let finalQuestions: ParsedQuestion[] = [];
       if (rawTextInput.trim().startsWith('[')) {
         const parsedJSON = JSON.parse(rawTextInput);
-        finalQuestions = parsedJSON.map((item: any, idx: number) => ({
-          id: `q_${Date.now()}_${idx}`,
-          test_id: Number(selectedTestId),
-          question_text: cleanText(item.question),
-          options: Array.isArray(item.options) ? item.options.map((opt: string) => cleanText(opt)) : [],
-          correct_option: typeof item.answer === 'string' ? item.answer.trim().toUpperCase().charCodeAt(0) - 65 : Number(item.answer || 0),
-          marks: Number(item.marks || defaultMarks),
-        }));
+        finalQuestions = parsedJSON.map((item: any, idx: number) => {
+          let ansIdx = 0;
+          if (typeof item.answer === 'string') {
+            const c = item.answer.trim().toUpperCase();
+            if (c.startsWith('B') || c === '2') ansIdx = 1;
+            else if (c.startsWith('C') || c === '3') ansIdx = 2;
+            else if (c.startsWith('D') || c === '4') ansIdx = 3;
+          } else if (typeof item.answer === 'number') {
+            ansIdx = item.answer;
+          }
+
+          return {
+            id: `q_${Date.now()}_${idx}`,
+            test_id: Number(selectedTestId),
+            question_text: cleanText(item.question),
+            options: Array.isArray(item.options) ? item.options.map((opt: string) => cleanText(opt)) : [],
+            correct_option: ansIdx,
+            marks: Number(item.marks || defaultMarks),
+          };
+        });
       } else {
         finalQuestions = parseQuestionsAdvanced(rawTextInput);
       }
@@ -168,7 +189,7 @@ export default function AdminControlMaster() {
       }
 
       setPreviewQuestions(finalQuestions);
-      setStatusMsg(`कुल ${finalQuestions.length} सवाल तैयार हैं। नीचे चेक करें, एडिट करें और फिर डेटाबेस में सेव करें!`);
+      setStatusMsg(`कुल ${finalQuestions.length} सवाल तैयार हैं। सभी का उत्तर (Ans) अपने आप सेट हो चुका है!`);
     } catch (err: any) {
       setStatusMsg('एरर: ' + err.message);
     }
@@ -212,7 +233,7 @@ export default function AdminControlMaster() {
       }
 
       setLoading(false);
-      setStatusMsg(`🎉 बधाई! सभी ${previewQuestions.length} सवाल Test #${selectedTestId} में सफलतापूर्वक सेव हो गए!`);
+      setStatusMsg(`🎉 बधाई! सभी ${previewQuestions.length} सवाल Test #${selectedTestId} में ऑटो-आंसर सहित सेव हो गए!`);
       setPreviewQuestions([]);
       setRawTextInput('');
     } catch (err: any) {
@@ -293,7 +314,7 @@ export default function AdminControlMaster() {
         <div className="flex justify-between items-center mb-6">
           <div>
             <h1 className="text-xl font-black text-white">Smart Admin Master Controller 🔒</h1>
-            <p className="text-xs text-slate-400">लाइव प्रीव्यू, एडिट एवं कथन सुरक्षित सिस्टम</p>
+            <p className="text-xs text-slate-400">ऑटो-उत्तर डिटेक्शन एवं कथन सुरक्षित सिस्टम</p>
           </div>
           <button
             onClick={() => (window.location.href = '/dashboard')}
@@ -362,7 +383,7 @@ export default function AdminControlMaster() {
 
               <div>
                 <label className="text-xs font-semibold text-slate-300 block mb-1">
-                  सवाल यहाँ पेस्ट करें (कथन सहित):
+                  सवाल यहाँ पेस्ट करें (कथन और Answer सहित):
                 </label>
                 <textarea
                   required
@@ -378,18 +399,18 @@ export default function AdminControlMaster() {
                 type="submit"
                 className="w-full bg-slate-800 hover:bg-slate-700 border border-slate-700 text-indigo-400 text-xs font-bold py-3.5 rounded-xl shadow transition"
               >
-                🔍 सवाल चेक और एडिट करें (Preview & Check)
+                🔍 सवाल चेक करें (Auto Answer Selected)
               </button>
             </form>
 
-            {/* Live Editable Review Cards */}
+            {/* Live Review Cards with Auto-Selected Answers */}
             {previewQuestions.length > 0 && (
               <div className="space-y-4 pt-4 border-t border-slate-800">
                 <div className="flex justify-between items-center">
                   <h3 className="text-sm font-bold text-emerald-400">
-                    📋 चेक करें ({previewQuestions.length} प्रश्न तैयार हैं):
+                    📋 चेक करें ({previewQuestions.length} प्रश्न - सही उत्तर ऑटो-सेलेक्टेड हैं):
                   </h3>
-                  <span className="text-[11px] text-slate-400">आप सीधे बॉक्स में सुधार कर सकते हैं</span>
+                  <span className="text-[11px] text-slate-400">बस एक नज़र देख लें</span>
                 </div>
 
                 <div className="space-y-4 max-h-[600px] overflow-y-auto pr-1">
@@ -406,9 +427,9 @@ export default function AdminControlMaster() {
                         </button>
                       </div>
 
-                      {/* Editable Question & Statements */}
+                      {/* Question Text */}
                       <div>
-                        <label className="text-[10px] text-slate-400 font-bold block mb-1">प्रश्न व कथन (Editable):</label>
+                        <label className="text-[10px] text-slate-400 font-bold block mb-1">प्रश्न व कथन:</label>
                         <textarea
                           rows={4}
                           value={q.question_text}
@@ -417,11 +438,20 @@ export default function AdminControlMaster() {
                         />
                       </div>
 
-                      {/* Editable Options */}
+                      {/* Options */}
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
                         {q.options.map((opt, optIdx) => (
-                          <div key={optIdx} className="flex items-center gap-2 bg-slate-900 p-2 rounded-xl border border-slate-800">
-                            <span className="text-xs font-bold text-indigo-400 w-5 text-center">
+                          <div
+                            key={optIdx}
+                            className={`flex items-center gap-2 p-2 rounded-xl border ${
+                              q.correct_option === optIdx
+                                ? 'bg-emerald-950/40 border-emerald-500/60'
+                                : 'bg-slate-900 border-slate-800'
+                            }`}
+                          >
+                            <span className={`text-xs font-bold w-5 text-center ${
+                              q.correct_option === optIdx ? 'text-emerald-400' : 'text-indigo-400'
+                            }`}>
                               {String.fromCharCode(65 + optIdx)}
                             </span>
                             <input
@@ -434,18 +464,18 @@ export default function AdminControlMaster() {
                         ))}
                       </div>
 
-                      {/* Correct Answer & Marks Selection */}
+                      {/* Auto-selected Answer indicator */}
                       <div className="flex items-center justify-between gap-4 pt-1">
                         <div className="flex items-center gap-2">
-                          <label className="text-xs text-slate-400 font-semibold">सही उत्तर:</label>
+                          <label className="text-xs text-slate-400 font-semibold">सही उत्तर (Auto-Selected):</label>
                           <select
                             value={q.correct_option}
                             onChange={(e) => updateQuestionField(qIdx, 'correct_option', Number(e.target.value))}
-                            className="bg-slate-900 border border-emerald-600/50 text-emerald-400 text-xs font-bold p-1.5 rounded-lg outline-none cursor-pointer"
+                            className="bg-emerald-950/60 border border-emerald-500 text-emerald-300 text-xs font-bold p-1.5 rounded-lg outline-none cursor-pointer"
                           >
                             {q.options.map((_, i) => (
                               <option key={i} value={i}>
-                                Option {String.fromCharCode(65 + i)}
+                                Option {String.fromCharCode(65 + i)} ({q.options[i]?.substring(0, 15)}...)
                               </option>
                             ))}
                           </select>
@@ -466,7 +496,7 @@ export default function AdminControlMaster() {
                   ))}
                 </div>
 
-                {/* Final Upload Button */}
+                {/* Final Save Button */}
                 <button
                   type="button"
                   disabled={loading}
