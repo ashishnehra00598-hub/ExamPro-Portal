@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { createClient } from '@supabase/supabase-js';
 
@@ -25,7 +25,7 @@ interface LeaderboardEntry {
   created_at: string;
 }
 
-export default function StudentTestScreen() {
+function TestContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const testId = searchParams.get('test_id');
@@ -56,7 +56,6 @@ export default function StudentTestScreen() {
 
       if (!testId) return;
 
-      // 1. टेस्ट डिटेल्स लोड
       const { data: testData } = await supabase
         .from('tests')
         .select('*')
@@ -68,7 +67,6 @@ export default function StudentTestScreen() {
         setTimeLeft((testData.duration_minutes || 60) * 60);
       }
 
-      // 2. टेस्ट के सवाल लोड
       const { data: qData } = await supabase
         .from('questions')
         .select('*')
@@ -152,7 +150,6 @@ export default function StudentTestScreen() {
     });
 
     try {
-      // Supabase में रिजल्ट इंसर्ट
       await supabase.from('test_attempts').insert([
         {
           test_id: Number(testId),
@@ -166,7 +163,6 @@ export default function StudentTestScreen() {
         },
       ]);
 
-      // इस टेस्ट का तुरंत लीडरबोर्ड लोड
       const { data: rankData } = await supabase
         .from('test_attempts')
         .select('student_name, score, total_marks, correct_count, created_at')
@@ -199,7 +195,7 @@ export default function StudentTestScreen() {
     );
   }
 
-  // रिजल्ट और एनालिसिस स्क्रीन
+  // रिजल्ट व सॉल्यूशन स्क्रीन
   if (isSubmitted && scoreResult) {
     return (
       <main className="min-h-screen bg-slate-950 text-slate-100 p-4 md:p-8 font-sans">
@@ -374,7 +370,7 @@ export default function StudentTestScreen() {
     );
   }
 
-  // लाइव टेस्ट स्क्रीन
+  // टेस्ट देने की स्क्रीन
   const currentQ = questions[currentQIndex];
 
   return (
@@ -491,5 +487,13 @@ export default function StudentTestScreen() {
         </div>
       </div>
     </main>
+  );
+}
+
+export default function StudentTestPage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen bg-slate-950 text-white flex items-center justify-center font-sans">लोड हो रहा है...</div>}>
+      <TestContent />
+    </Suspense>
   );
 }
