@@ -25,9 +25,9 @@ export default function SuperDashboard() {
   const [allScores, setAllScores] = useState<any[]>([]);
   const [examAlerts, setExamAlerts] = useState<any[]>([]);
 
-  const [selectedCategory, setSelectedCategory] = useState<string>('cet_12th');
+  const [selectedCategory, setSelectedCategory] = useState<string>('all');
   const [selectedSubTab, setSelectedSubTab] = useState<string>('all');
-  const [searchQuery, setSearchQuery] = useState<string>('');
+  const [searchCategoryQuery, setSearchCategoryQuery] = useState<string>('');
   const [showAllTests, setShowAllTests] = useState<boolean>(false);
   const [selectedLeaderboardTest, setSelectedLeaderboardTest] = useState<string>('all');
   const [loading, setLoading] = useState(true);
@@ -75,10 +75,10 @@ export default function SuperDashboard() {
     loadMasterData();
   }, []);
 
-  // फ़िल्टर या कैटेगरी बदलने पर See More रीसेट
+  // फ़िल्टर / सर्च बदलने पर See More रीसेट
   useEffect(() => {
     setShowAllTests(false);
-  }, [selectedCategory, selectedSubTab, searchQuery]);
+  }, [selectedCategory, selectedSubTab, searchCategoryQuery]);
 
   const handleLogout = async () => {
     await supabase.auth.signOut();
@@ -112,34 +112,41 @@ export default function SuperDashboard() {
   const realAccuracy = calculateRealAccuracy();
   const studentDisplayName = user?.user_metadata?.full_name || user?.email?.split('@')[0] || 'विद्यार्थी';
 
-  // सर्च और फ़िल्टर लॉजिक
+  // 1. सर्च क्वेरी के आधार पर उपलब्ध कैटेगरी फ़िल्टर
+  const visibleCategories = EXAM_CATEGORIES.filter((cat) => {
+    if (!searchCategoryQuery.trim()) return true;
+    return cat.name.toLowerCase().includes(searchCategoryQuery.toLowerCase().trim());
+  });
+
+  // 2. कैटेगरी और सब-टैब के आधार पर टेस्ट्स फ़िल्टर
   const filteredTests = tests.filter((t) => {
     const cat = (t.category || 'Rajasthan CET (10+2)').toLowerCase();
     const type = (t.test_type || 'Full Mock Test').toLowerCase();
-    const title = (t.title || '').toLowerCase();
 
+    // कैटेगरी मैच
     let matchCat = true;
     if (selectedCategory === 'cet_12th') matchCat = cat.includes('10+2') || cat.includes('12th');
     else if (selectedCategory === 'cet_grad') matchCat = cat.includes('grad');
     else if (selectedCategory === 'police_constable') matchCat = cat.includes('constable') || cat.includes('police');
     else if (selectedCategory === 'rajasthan_si') matchCat = cat.includes('si');
 
+    // अगर सर्च बॉक्स में कुछ लिखा है तो कैटेगरी टेक्स्ट से भी मैच करें
+    if (searchCategoryQuery.trim() !== '') {
+      const q = searchCategoryQuery.toLowerCase().trim();
+      matchCat = cat.includes(q);
+    }
+
+    // सब-टैब (Mock / Subject) मैच
     let matchType = true;
     if (selectedSubTab === 'mock') matchType = type.includes('full') || type.includes('mock');
     else if (selectedSubTab === 'subject') matchType = type.includes('subject');
 
-    let matchSearch = true;
-    if (searchQuery.trim() !== '') {
-      matchSearch = title.includes(searchQuery.toLowerCase().trim());
-    }
-
-    return matchCat && matchType && matchSearch;
+    return matchCat && matchType;
   });
 
-  // सिर्फ 3 टेस्ट दिखाना (जब तक see more पर क्लिक न किया हो)
   const visibleTests = showAllTests ? filteredTests : filteredTests.slice(0, 3);
 
-  // Leaderboard Calculation
+  // Leaderboard
   const calculateOverallLeaderboard = () => {
     const userTotals: { [name: string]: { totalScore: number; testsGiven: number; name: string } } = {};
     allScores.forEach((row) => {
@@ -211,7 +218,7 @@ export default function SuperDashboard() {
       {/* Main Container */}
       <main className="max-w-6xl w-full mx-auto p-6 md:p-8 space-y-8">
         
-        {/* Top Header: नमस्ते + मुख्य एग्जाम काउंटडाउन */}
+        {/* Top Header */}
         <div className="bg-slate-900 border border-slate-800 p-6 rounded-3xl flex flex-col md:flex-row justify-between items-start md:items-center gap-4 shadow-xl">
           <div>
             <h1 className="text-2xl md:text-3xl font-bold text-white tracking-tight">
@@ -274,23 +281,23 @@ export default function SuperDashboard() {
           </div>
         </div>
 
-        {/* 2-Level Exam Selector + Search */}
+        {/* 2-Level Exam Selector + Category Search */}
         <section className="space-y-5 bg-slate-900/60 border border-slate-800/80 p-6 rounded-3xl">
           <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
             <h2 className="text-lg font-bold text-white tracking-wide">🎯 1. अपना टारगेट एग्जाम चुनें</h2>
             
-            {/* Search Box */}
-            <div className="relative min-w-[240px]">
+            {/* Category Search Box */}
+            <div className="relative min-w-[260px]">
               <input
                 type="text"
-                placeholder="🔍 टेस्ट पेपर खोजें..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="🔍 एग्जाम कैटेगरी खोजें (उदा. CET, Police)..."
+                value={searchCategoryQuery}
+                onChange={(e) => setSearchCategoryQuery(e.target.value)}
                 className="w-full bg-slate-950 border border-slate-700 text-xs text-white rounded-xl pl-3 pr-8 py-2.5 outline-none focus:border-indigo-500 transition"
               />
-              {searchQuery && (
+              {searchCategoryQuery && (
                 <button
-                  onClick={() => setSearchQuery('')}
+                  onClick={() => setSearchCategoryQuery('')}
                   className="absolute right-2.5 top-2.5 text-slate-400 hover:text-white text-xs cursor-pointer"
                 >
                   ✕
@@ -299,28 +306,36 @@ export default function SuperDashboard() {
             </div>
           </div>
 
+          {/* Exam Category Buttons */}
           <div className="flex gap-2.5 overflow-x-auto pb-2 mt-1 scrollbar-none">
-            {EXAM_CATEGORIES.map((cat) => {
-              const isActive = selectedCategory === cat.id;
-              return (
-                <button
-                  key={cat.id}
-                  onClick={() => setSelectedCategory(cat.id)}
-                  className={`px-5 py-3 rounded-2xl text-xs font-bold whitespace-nowrap transition border cursor-pointer ${
-                    isActive
-                      ? 'bg-indigo-600 border-indigo-500 text-white shadow-lg shadow-indigo-950'
-                      : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-white hover:border-slate-700'
-                  }`}
-                >
-                  {cat.name}
-                </button>
-              );
-            })}
+            {visibleCategories.length === 0 ? (
+              <span className="text-xs text-slate-500 py-2">कोई मेल खाती कैटेगरी नहीं मिली।</span>
+            ) : (
+              visibleCategories.map((cat) => {
+                const isActive = selectedCategory === cat.id && !searchCategoryQuery;
+                return (
+                  <button
+                    key={cat.id}
+                    onClick={() => {
+                      setSelectedCategory(cat.id);
+                      setSearchCategoryQuery('');
+                    }}
+                    className={`px-5 py-3 rounded-2xl text-xs font-bold whitespace-nowrap transition border cursor-pointer ${
+                      isActive
+                        ? 'bg-indigo-600 border-indigo-500 text-white shadow-lg shadow-indigo-950'
+                        : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-white hover:border-slate-700'
+                    }`}
+                  >
+                    {cat.name}
+                  </button>
+                );
+              })
+            )}
           </div>
 
           <div className="pt-2 border-t border-slate-800/80">
             <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">
-              📑 2. टेस्ट कैटेगरी चुनें:
+              📑 2. टेस्ट प्रकार चुनें:
             </h3>
             <div className="flex gap-2 p-1 bg-slate-950 rounded-2xl border border-slate-800 max-w-md">
               <button
@@ -350,7 +365,7 @@ export default function SuperDashboard() {
             </div>
           </div>
 
-          {/* Test Cards List (Top 3 or All) */}
+          {/* Test Cards List / Coming Soon Banner */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5 pt-4">
             {filteredTests.length === 0 ? (
               <div className="col-span-full bg-slate-950/80 border border-slate-800/90 p-10 rounded-3xl text-center space-y-3">
@@ -359,7 +374,7 @@ export default function SuperDashboard() {
                 </div>
                 <h3 className="text-base font-bold text-white">शीघ्र उपलब्ध होगा (Coming Soon)</h3>
                 <p className="text-xs text-slate-400 max-w-md mx-auto">
-                  इस विषय/कैटेगरी के नए और अपडेटेड मॉक टेस्ट पेपर जल्द ही लाइव किए जा रहे हैं। कृपया अन्य उपलब्ध टेस्टों का अभ्यास जारी रखें!
+                  इस एग्जाम कैटेगरी के नए मॉक टेस्ट पेपर जल्द ही लाइव किए जा रहे हैं। कृपया अन्य उपलब्ध टेस्टों का अभ्यास करें!
                 </p>
               </div>
             ) : (
