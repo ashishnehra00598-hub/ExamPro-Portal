@@ -10,6 +10,15 @@ const supabase = createClient(
 
 const ADMIN_EMAIL = 'nehraa365@gmail.com';
 
+interface ParsedQuestion {
+  id: string;
+  test_id: number;
+  question_text: string;
+  options: string[];
+  correct_option: number;
+  marks: number;
+}
+
 export default function AdminControlMaster() {
   const [isAdmin, setIsAdmin] = useState(false);
   const [authChecking, setAuthChecking] = useState(true);
@@ -30,6 +39,9 @@ export default function AdminControlMaster() {
   const [testsList, setTestsList] = useState<any[]>([]);
   const [rawTextInput, setRawTextInput] = useState('');
   const [defaultMarks, setDefaultMarks] = useState(2);
+
+  // Live Review & Edit State
+  const [previewQuestions, setPreviewQuestions] = useState<ParsedQuestion[]>([]);
 
   const [examName, setExamName] = useState('');
   const [examDate, setExamDate] = useState('');
@@ -58,7 +70,7 @@ export default function AdminControlMaster() {
     verifyAdmin();
   }, [tab]);
 
-  const cleanCitationTags = (str: string) => {
+  const cleanText = (str: string) => {
     if (!str) return '';
     return str
       .replace(/\[\s*cite\s*:\s*[\d\s,]+\]/gi, '')
@@ -67,115 +79,145 @@ export default function AdminControlMaster() {
       .trim();
   };
 
-  // कथन और बहु-पंक्ति प्रश्नों को सुरक्षित पार्स करने वाला फ़ंक्शन
-  const parseQuestionsRobust = (text: string) => {
-    const rawLines = text.split('\n').map((l) => l.trim()).filter((l) => l.length > 0);
-    const questions: any[] = [];
-    let currentQ: any = null;
+  const parseQuestionsAdvanced = (text: string): ParsedQuestion[] => {
+    const rawBlocks = text.split(/\n(?=(?:Q\s*\.?\s*\d+|प्रश्न\s*\.?\s*\d+)[\.\:\)\s\-])/i);
+    const parsed: ParsedQuestion[] = [];
 
-    for (let i = 0; i < rawLines.length; i++) {
-      const line = rawLines[i];
+    for (let bIndex = 0; bIndex < rawBlocks.length; bIndex++) {
+      const block = rawBlocks[bIndex].trim();
+      if (!block) continue;
 
-      // केवल Q1, Q.1, प्रश्न 1 से नया प्रश्न शुरू होगा (कथन 1., 2. को प्रश्न का हिस्सा माना जाएगा)
-      const isNewQuestion = /^(Q\s*\.?\s*\d+|प्रश्न\s*\.?\s*\d+)[\.\:\)\s\-]/i.test(line);
+      const lines = block.split('\n').map((l) => l.trim()).filter((l) => l.length > 0);
+      if (lines.length === 0) continue;
 
-      if (isNewQuestion) {
-        if (currentQ && currentQ.question_text && currentQ.options.length >= 2) {
-          questions.push(currentQ);
+      let questionLines: string[] = [];
+      let options: string[] = [];
+      let answerIndex = 0;
+      let inOptions = false;
+
+      for (let i = 0; i < lines.length; i++) {
+        const line = lines[i];
+
+        if (i === 0 && /^(Q\s*\.?\s*\d+|प्रश्न\s*\.?\s*\d+)[\.\:\)\s\-]*/i.test(line)) {
+          const cleanFirstLine = line.replace(/^(Q\s*\.?\s*\d+|प्रश्न\s*\.?\s*\d+)[\.\:\)\s\-]*/i, '').trim();
+          if (cleanFirstLine) questionLines.push(cleanText(cleanFirstLine));
+          continue;
         }
-        const cleanedQ = cleanCitationTags(line.replace(/^(Q\s*\.?\s*\d+|प्रश्न\s*\.?\s*\d+)[\.\:\)\s\-]*/i, ''));
-        currentQ = {
-          test_id: Number(selectedTestId),
-          question_text: cleanedQ,
-          options: [],
-          correct_option: 0,
-          marks: Number(defaultMarks),
-        };
-        continue;
-      }
 
-      if (!currentQ) {
-        currentQ = {
-          test_id: Number(selectedTestId),
-          question_text: cleanCitationTags(line),
-          options: [],
-          correct_option: 0,
-          marks: Number(defaultMarks),
-        };
-        continue;
-      }
+        if (/^(Ans|Answer|उत्तर|सही उत्तर)[\s\.\:\-\=]*/i.test(line)) {
+          const ansVal = line.replace(/^(Ans|Answer|उत्तर|सही उत्तर)[\s\.\:\-\=]*/i, '').trim().toUpperCase();
+          if (ansVal.startsWith('A') || ansVal === '1' || ansVal.startsWith('क')) answerIndex = 0;
+          else if (ansVal.startsWith('B') || ansVal === '2' || ansVal.startsWith('ख')) answerIndex = 1;
+          else if (ansVal.startsWith('C') || ansVal === '3' || ansVal.startsWith('ग')) answerIndex = 2;
+          else if (ansVal.startsWith('D') || ansVal === '4' || ansVal.startsWith('घ')) answerIndex = 3;
+          continue;
+        }
 
-      // Options detection (A., B., C., D. या (A), (B))
-      const isOptA = /^(\([A1a]\)|[A1a][\.\:\)\s\-])/i.test(line);
-      const isOptB = /^(\([B2b]\)|[B2b][\.\:\)\s\-])/i.test(line);
-      const isOptC = /^(\([C3c]\)|[C3c][\.\:\)\s\-])/i.test(line);
-      const isOptD = /^(\([D4d]\)|[D4d][\.\:\)\s\-])/i.test(line);
+        const optMatch = line.match(/^(\([A-Da-d]\)|[A-Da-d][\.\:\)\-\s]+|\([1-4]\)|[1-4][\.\:\)\-\s]+|\([क-घ]\)|[क-घ][\.\:\)\-\s]+)(.*)/);
+        const isStrictOption = /^(\([A-Da-d]\)|[A-Da-d][\.\:\)\-\s]+|\([क-घ]\)|[क-घ][\.\:\)\-\s]+)/i.test(line);
 
-      if (isOptA) {
-        currentQ.options[0] = cleanCitationTags(line.replace(/^(\([A1a]\)|[A1a][\.\:\)\s\-])\s*/i, ''));
-      } else if (isOptB) {
-        currentQ.options[1] = cleanCitationTags(line.replace(/^(\([B2b]\)|[B2b][\.\:\)\s\-])\s*/i, ''));
-      } else if (isOptC) {
-        currentQ.options[2] = cleanCitationTags(line.replace(/^(\([C3c]\)|[C3c][\.\:\)\s\-])\s*/i, ''));
-      } else if (isOptD) {
-        currentQ.options[3] = cleanCitationTags(line.replace(/^(\([D4d]\)|[D4d][\.\:\)\s\-])\s*/i, ''));
-      } else if (/^(Ans|Answer|उत्तर|सही उत्तर)[\s\.\:\-\=]*/i.test(line)) {
-        const val = cleanCitationTags(line.replace(/^(Ans|Answer|उत्तर|सही उत्तर)[\s\.\:\-\=]*/i, '')).toUpperCase();
-        if (val.startsWith('A') || val === '1') currentQ.correct_option = 0;
-        else if (val.startsWith('B') || val === '2') currentQ.correct_option = 1;
-        else if (val.startsWith('C') || val === '3') currentQ.correct_option = 2;
-        else if (val.startsWith('D') || val === '4') currentQ.correct_option = 3;
-      } else {
-        // कथन (1, 2, 3) या अतिरिक्त प्रश्न विवरण को प्रश्न में जोड़ना
-        if (currentQ.options.length === 0) {
-          currentQ.question_text += '\n' + cleanCitationTags(line);
+        if (isStrictOption) {
+          inOptions = true;
+          const optContent = line.replace(/^(\([A-Da-d]\)|[A-Da-d][\.\:\)\-\s]+|\([क-घ]\)|[क-घ][\.\:\)\-\s]+)\s*/i, '').trim();
+          options.push(cleanText(optContent));
+        } else if (inOptions && optMatch) {
+          const optContent = optMatch[2].trim();
+          options.push(cleanText(optContent));
+        } else {
+          questionLines.push(cleanText(line));
         }
       }
-    }
 
-    if (currentQ && currentQ.question_text && currentQ.options.length >= 2) {
-      questions.push(currentQ);
+      const fullQuestionText = questionLines.join('\n').trim();
+
+      if (fullQuestionText && options.length >= 2) {
+        parsed.push({
+          id: `q_${Date.now()}_${bIndex}`,
+          test_id: Number(selectedTestId),
+          question_text: fullQuestionText,
+          options: options,
+          correct_option: answerIndex,
+          marks: Number(defaultMarks),
+        });
+      }
     }
-    return questions;
+    return parsed;
   };
 
-  const handleSmartUpload = async (e: React.FormEvent) => {
+  const handleGeneratePreview = (e: React.FormEvent) => {
     e.preventDefault();
-    setLoading(true);
     setStatusMsg('');
-
     try {
-      let finalQuestions: any[] = [];
+      let finalQuestions: ParsedQuestion[] = [];
       if (rawTextInput.trim().startsWith('[')) {
         const parsedJSON = JSON.parse(rawTextInput);
-        finalQuestions = parsedJSON.map((item: any) => ({
+        finalQuestions = parsedJSON.map((item: any, idx: number) => ({
+          id: `q_${Date.now()}_${idx}`,
           test_id: Number(selectedTestId),
-          question_text: cleanCitationTags(item.question),
-          options: Array.isArray(item.options) ? item.options.map((opt: string) => cleanCitationTags(opt)) : [],
+          question_text: cleanText(item.question),
+          options: Array.isArray(item.options) ? item.options.map((opt: string) => cleanText(opt)) : [],
           correct_option: typeof item.answer === 'string' ? item.answer.trim().toUpperCase().charCodeAt(0) - 65 : Number(item.answer || 0),
           marks: Number(item.marks || defaultMarks),
         }));
       } else {
-        finalQuestions = parseQuestionsRobust(rawTextInput);
+        finalQuestions = parseQuestionsAdvanced(rawTextInput);
       }
 
       if (finalQuestions.length === 0) {
-        throw new Error('कोई सवाल सही से नहीं पढ़ा जा सका। कृपया फॉर्मेट जाँचें (जैसे Q1. प्रश्न... A. B. C. D. Answer: A)');
+        throw new Error('कोई सवाल सही से नहीं पढ़ा जा सका। कृपया फॉर्मेट जाँचें।');
       }
 
+      setPreviewQuestions(finalQuestions);
+      setStatusMsg(`कुल ${finalQuestions.length} सवाल तैयार हैं। नीचे चेक करें, एडिट करें और फिर डेटाबेस में सेव करें!`);
+    } catch (err: any) {
+      setStatusMsg('एरर: ' + err.message);
+    }
+  };
+
+  const updateQuestionField = (index: number, field: keyof ParsedQuestion, value: any) => {
+    const updated = [...previewQuestions];
+    updated[index] = { ...updated[index], [field]: value };
+    setPreviewQuestions(updated);
+  };
+
+  const updateOptionText = (qIndex: number, optIndex: number, text: string) => {
+    const updated = [...previewQuestions];
+    const newOptions = [...updated[qIndex].options];
+    newOptions[optIndex] = text;
+    updated[qIndex].options = newOptions;
+    setPreviewQuestions(updated);
+  };
+
+  const removeQuestionFromPreview = (index: number) => {
+    const updated = previewQuestions.filter((_, i) => i !== index);
+    setPreviewQuestions(updated);
+  };
+
+  const handleFinalUploadToDatabase = async () => {
+    if (previewQuestions.length === 0) return;
+    setLoading(true);
+    setStatusMsg('');
+
+    try {
+      const payload = previewQuestions.map(({ id, ...rest }) => ({
+        ...rest,
+        test_id: Number(selectedTestId),
+      }));
+
       const chunkSize = 30;
-      for (let i = 0; i < finalQuestions.length; i += chunkSize) {
-        const chunk = finalQuestions.slice(i, i + chunkSize);
+      for (let i = 0; i < payload.length; i += chunkSize) {
+        const chunk = payload.slice(i, i + chunkSize);
         const { error } = await supabase.from('questions').insert(chunk);
         if (error) throw new Error(error.message);
       }
 
       setLoading(false);
-      setStatusMsg(`शानदार! कुल ${finalQuestions.length} सवाल पूरे कथनों के साथ Test #${selectedTestId} में सेव हो गए।`);
+      setStatusMsg(`🎉 बधाई! सभी ${previewQuestions.length} सवाल Test #${selectedTestId} में सफलतापूर्वक सेव हो गए!`);
+      setPreviewQuestions([]);
       setRawTextInput('');
     } catch (err: any) {
       setLoading(false);
-      setStatusMsg('अपलोड एरर: ' + err.message);
+      setStatusMsg('डेटाबेस सेव एरर: ' + err.message);
     }
   };
 
@@ -197,7 +239,7 @@ export default function AdminControlMaster() {
     setLoading(false);
     if (error) setStatusMsg('Error: ' + error.message);
     else {
-      setStatusMsg(`नया टेस्ट [${testCategory} - ${testType}] सफलता से बन गया!`);
+      setStatusMsg(`नया टेस्ट [${testCategory} - ${testType}] बन गया!`);
       setTestTitle('');
       setTestDesc('');
       const { data } = await supabase.from('tests').select('id, title, category, test_type, negative_marks');
@@ -251,7 +293,7 @@ export default function AdminControlMaster() {
         <div className="flex justify-between items-center mb-6">
           <div>
             <h1 className="text-xl font-black text-white">Smart Admin Master Controller 🔒</h1>
-            <p className="text-xs text-slate-400">कथन आधारित प्रश्न एवं टेस्ट कंट्रोल</p>
+            <p className="text-xs text-slate-400">लाइव प्रीव्यू, एडिट एवं कथन सुरक्षित सिस्टम</p>
           </div>
           <button
             onClick={() => (window.location.href = '/dashboard')}
@@ -263,7 +305,7 @@ export default function AdminControlMaster() {
 
         <div className="grid grid-cols-2 md:grid-cols-4 gap-2 p-1.5 bg-slate-950 rounded-2xl border border-slate-800 mb-6">
           {[
-            { id: 'questions', label: '1. 🚀 सवाल अपलोड' },
+            { id: 'questions', label: '1. 🚀 सवाल अपलोड & रिव्यू' },
             { id: 'tests', label: '2. नया टेस्ट बनाएँ' },
             { id: 'exams', label: '3. एग्जाम अलर्ट' },
             { id: 'capsule', label: '4. नोट्स / PDF' },
@@ -291,55 +333,151 @@ export default function AdminControlMaster() {
         )}
 
         {tab === 'questions' && (
-          <form onSubmit={handleSmartUpload} className="space-y-4">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-xs font-semibold text-slate-300 mb-1">टेस्ट चुनें</label>
-                <select
-                  value={selectedTestId}
-                  onChange={(e) => setSelectedTestId(Number(e.target.value))}
-                  className="w-full p-3 bg-slate-950 border border-slate-800 rounded-xl text-xs text-indigo-300 outline-none cursor-pointer"
-                >
-                  {testsList.map((t) => (
-                    <option key={t.id} value={t.id}>Test #{t.id}: [{t.category}] {t.title}</option>
-                  ))}
-                </select>
+          <div className="space-y-6">
+            <form onSubmit={handleGeneratePreview} className="space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-300 mb-1">टेस्ट चुनें</label>
+                  <select
+                    value={selectedTestId}
+                    onChange={(e) => setSelectedTestId(Number(e.target.value))}
+                    className="w-full p-3 bg-slate-950 border border-slate-800 rounded-xl text-xs text-indigo-300 outline-none cursor-pointer"
+                  >
+                    {testsList.map((t) => (
+                      <option key={t.id} value={t.id}>Test #{t.id}: [{t.category}] {t.title}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-slate-300 mb-1">प्रति प्रश्न अंक (+Marks)</label>
+                  <input
+                    type="number"
+                    step="0.5"
+                    value={defaultMarks}
+                    onChange={(e) => setDefaultMarks(Number(e.target.value))}
+                    className="w-full p-3 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white outline-none"
+                  />
+                </div>
               </div>
+
               <div>
-                <label className="block text-xs font-semibold text-slate-300 mb-1">प्रति प्रश्न सही अंक (+Marks)</label>
-                <input
-                  type="number"
-                  step="0.5"
-                  value={defaultMarks}
-                  onChange={(e) => setDefaultMarks(Number(e.target.value))}
-                  className="w-full p-3 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white outline-none"
+                <label className="text-xs font-semibold text-slate-300 block mb-1">
+                  सवाल यहाँ पेस्ट करें (कथन सहित):
+                </label>
+                <textarea
+                  required
+                  rows={8}
+                  value={rawTextInput}
+                  onChange={(e) => setRawTextInput(e.target.value)}
+                  placeholder={`Q1. भटनेर दुर्ग के संदर्भ में निम्न कथनों पर विचार कीजिये-\n1. यह भारत के सबसे पुराने किलो में से एक है।\n2. इसे उत्तरी सीमा का प्रहरी भी कहा जाता है।\n3. 52 बीघा भूमि इसमें स्थित है।\nउपरोक्त में से कौनसा कथन सत्य हैं?\nA. केवल 1 व 2\nB. केवल 2 व 3\nC. केवल 1 व 3\nD. 1, 2 व 3\nAnswer: D`}
+                  className="w-full font-mono text-xs p-4 bg-slate-950 border border-slate-800 rounded-2xl text-indigo-300 outline-none focus:border-indigo-500"
                 />
               </div>
-            </div>
 
-            <div>
-              <div className="flex justify-between items-center mb-1">
-                <label className="text-xs font-semibold text-slate-300">सवाल यहाँ पेस्ट करें (कथन सहित पूरा पेस्ट करें):</label>
-                <span className="text-[11px] text-emerald-400 font-medium">Statements Protected</span>
+              <button
+                type="submit"
+                className="w-full bg-slate-800 hover:bg-slate-700 border border-slate-700 text-indigo-400 text-xs font-bold py-3.5 rounded-xl shadow transition"
+              >
+                🔍 सवाल चेक और एडिट करें (Preview & Check)
+              </button>
+            </form>
+
+            {/* Live Editable Review Cards */}
+            {previewQuestions.length > 0 && (
+              <div className="space-y-4 pt-4 border-t border-slate-800">
+                <div className="flex justify-between items-center">
+                  <h3 className="text-sm font-bold text-emerald-400">
+                    📋 चेक करें ({previewQuestions.length} प्रश्न तैयार हैं):
+                  </h3>
+                  <span className="text-[11px] text-slate-400">आप सीधे बॉक्स में सुधार कर सकते हैं</span>
+                </div>
+
+                <div className="space-y-4 max-h-[600px] overflow-y-auto pr-1">
+                  {previewQuestions.map((q, qIdx) => (
+                    <div key={q.id} className="p-4 bg-slate-950 border border-slate-800 rounded-2xl space-y-3">
+                      <div className="flex justify-between items-center">
+                        <span className="text-xs font-bold text-indigo-400">प्रश्न #{qIdx + 1}</span>
+                        <button
+                          type="button"
+                          onClick={() => removeQuestionFromPreview(qIdx)}
+                          className="text-[11px] text-rose-400 hover:text-rose-300 font-semibold"
+                        >
+                          🗑️ हटाएँ
+                        </button>
+                      </div>
+
+                      {/* Editable Question & Statements */}
+                      <div>
+                        <label className="text-[10px] text-slate-400 font-bold block mb-1">प्रश्न व कथन (Editable):</label>
+                        <textarea
+                          rows={4}
+                          value={q.question_text}
+                          onChange={(e) => updateQuestionField(qIdx, 'question_text', e.target.value)}
+                          className="w-full text-xs p-2.5 bg-slate-900 border border-slate-700 rounded-xl text-white outline-none focus:border-indigo-500 font-sans leading-relaxed"
+                        />
+                      </div>
+
+                      {/* Editable Options */}
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                        {q.options.map((opt, optIdx) => (
+                          <div key={optIdx} className="flex items-center gap-2 bg-slate-900 p-2 rounded-xl border border-slate-800">
+                            <span className="text-xs font-bold text-indigo-400 w-5 text-center">
+                              {String.fromCharCode(65 + optIdx)}
+                            </span>
+                            <input
+                              type="text"
+                              value={opt}
+                              onChange={(e) => updateOptionText(qIdx, optIdx, e.target.value)}
+                              className="w-full bg-transparent text-xs text-slate-200 outline-none"
+                            />
+                          </div>
+                        ))}
+                      </div>
+
+                      {/* Correct Answer & Marks Selection */}
+                      <div className="flex items-center justify-between gap-4 pt-1">
+                        <div className="flex items-center gap-2">
+                          <label className="text-xs text-slate-400 font-semibold">सही उत्तर:</label>
+                          <select
+                            value={q.correct_option}
+                            onChange={(e) => updateQuestionField(qIdx, 'correct_option', Number(e.target.value))}
+                            className="bg-slate-900 border border-emerald-600/50 text-emerald-400 text-xs font-bold p-1.5 rounded-lg outline-none cursor-pointer"
+                          >
+                            {q.options.map((_, i) => (
+                              <option key={i} value={i}>
+                                Option {String.fromCharCode(65 + i)}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+
+                        <div className="flex items-center gap-2">
+                          <label className="text-xs text-slate-400 font-semibold">अंक:</label>
+                          <input
+                            type="number"
+                            step="0.5"
+                            value={q.marks}
+                            onChange={(e) => updateQuestionField(qIdx, 'marks', Number(e.target.value))}
+                            className="w-16 bg-slate-900 border border-slate-700 text-xs text-white p-1.5 rounded-lg text-center outline-none"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Final Upload Button */}
+                <button
+                  type="button"
+                  disabled={loading}
+                  onClick={handleFinalUploadToDatabase}
+                  className="w-full bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white text-xs font-bold py-4 rounded-xl shadow-lg transition"
+                >
+                  {loading ? 'डेटाबेस में सेव हो रहा है...' : `✅ सब ठीक है! सभी ${previewQuestions.length} सवाल टेस्ट #${selectedTestId} में सेव करें`}
+                </button>
               </div>
-              <textarea
-                required
-                rows={12}
-                value={rawTextInput}
-                onChange={(e) => setRawTextInput(e.target.value)}
-                placeholder={`Q1. भटनेर दुर्ग के संदर्भ में निम्न कथनों पर विचार कीजिये-\n1. यह भारत के सबसे पुराने किलो में से एक है।\n2. इसे उत्तरी सीमा का प्रहरी भी कहा जाता है।\n3. 52 बीघा भूमि इसमें स्थित है।\nउपरोक्त में से कौनसा कथन सत्य हैं?\nA. केवल 1 व 2\nB. केवल 2 व 3\nC. केवल 1 व 3\nD. 1, 2 व 3\nAnswer: D`}
-                className="w-full font-mono text-xs p-4 bg-slate-950 border border-slate-800 rounded-2xl text-indigo-300 outline-none focus:border-indigo-500"
-              />
-            </div>
-
-            <button
-              type="submit"
-              disabled={loading}
-              className="w-full bg-gradient-to-r from-indigo-600 to-blue-600 hover:from-indigo-500 hover:to-blue-500 text-white text-xs font-bold py-4 rounded-xl shadow-lg transition"
-            >
-              {loading ? 'अपलोड हो रहा है...' : '🚀 सभी सवाल अपलोड करें'}
-            </button>
-          </form>
+            )}
+          </div>
         )}
 
         {tab === 'tests' && (
